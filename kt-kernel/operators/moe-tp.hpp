@@ -50,6 +50,22 @@ class TP_MOE_Common : public MoE_Interface {
       throw std::runtime_error("no worker pool");
     }
 
+#if !defined(__aarch64__) && !defined(__x86_64__) && !defined(_M_X64)
+    if (config.native_mxfp4) throw std::invalid_argument("Native MXFP4 requires ARM NEON or x86");
+#endif
+    if (config.native_mxfp4) {
+      if (config.pool->config.subpool_count != 1 || config.gate_type != GGML_TYPE_MXFP4 ||
+          config.up_type != GGML_TYPE_MXFP4 || config.down_type != GGML_TYPE_MXFP4 ||
+          !config.gate_proj || !config.up_proj || !config.down_proj ||
+          !config.gate_scale || !config.up_scale || !config.down_scale ||
+          config.hidden_size % 256 || config.intermediate_size % 256)
+        throw std::invalid_argument("Native MXFP4 requires one NUMA pool, aligned dimensions and all weight/scale pointers");
+      const size_t count=(size_t)config.expert_num*config.hidden_size*config.intermediate_size/32;
+      for (const void* src : {config.gate_scale,config.up_scale,config.down_scale})
+        for (size_t j=0;j<count;++j) if (static_cast<const uint8_t*>(src)[j]==255)
+          throw std::invalid_argument("Reserved E8M0 scale 255 in native MXFP4 weights");
+    }
+
     this->config = config;
     tp_count = config.pool->config.subpool_count;
     if (config.intermediate_size % tp_count != 0) {

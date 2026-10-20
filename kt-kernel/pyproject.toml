@@ -20,11 +20,13 @@ classifiers = [
 ]
 requires-python = ">=3.11"
 dependencies = [
-  # Core dependencies
-  "torch==2.9.1",
+  # Install the torch version paired with torch_npu; 9334 uses torch 2.10.0.
+  "torch>=2.8.0,<2.11.0",
   "safetensors>=0.4.0",
   "numpy>=1.24.0",
-  "triton>=2.0.0",
+  # Triton mainly serves the x86 GPU path. aarch64 + NPU inference does not need it, and it pulls
+  # in hundreds of MB of wheels tightly coupled to torch.
+  "triton>=2.0.0; platform_machine == 'x86_64' or platform_machine == 'AMD64'",
   "gguf>=0.17.0",
   # CLI dependencies
   "typer>=0.9.0",

@@ -298,6 +298,7 @@ struct GeneralMOEConfig {
   bool share_cache_pool = false;
 
   // for llamafile
+  bool native_mxfp4 = false;
   int m_block = 4;
   int group_min_len = 0;
   int group_max_len = 0;

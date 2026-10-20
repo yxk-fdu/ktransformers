@@ -21,8 +21,10 @@
 #include <memory>
 #include <mutex>
 #include <thread>
+#include <cstdint>
 #include <vector>
 
+// Enable with -DPROFILE_BALANCE when building kt-kernel.
 // #define PROFILE_BALANCE
 
 inline void set_to_numa(int this_numa) {
@@ -64,9 +66,13 @@ struct alignas(64) ThreadState {
   std::atomic<ThreadStatus> status;
   std::mutex mutex;
   std::condition_variable cv;
-#ifdef PROFILE_BALANCE
-  size_t finish_ns;
-#endif
+  uint64_t finish_ns = 0;
+  uint64_t init_ns = 0;
+  uint64_t compute_ns = 0;
+  uint64_t finalize_ns = 0;
+  uint64_t schedule_ns = 0;
+  uint64_t task_count = 0;
+  uint64_t max_task_ns = 0;
 };
 
 class InNumaPool {
@@ -84,6 +90,7 @@ class InNumaPool {
   void do_work_stealing_job(int, std::function<void(int)>);
 
  private:
+  uint64_t lifecycle_task_id_=0; int lifecycle_layer_=-1;
   int worker_count;
   int total_worker_count;
 
@@ -97,6 +104,12 @@ class InNumaPool {
   std::function<void(int)> finalize_func_;
   std::atomic<int> curr_;
   int end_;
+
+#ifdef PROFILE_BALANCE
+  // steady_clock ns stamped at dispatch (before any worker is woken).  Reported by
+  // wait() so the CPU job can be placed on a shared timeline next to NPU events.
+  uint64_t job_start_ns_ = 0;
+#endif
 
   void process_tasks(int);
   void worker_thread(int, int);

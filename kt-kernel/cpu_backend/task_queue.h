@@ -11,6 +11,7 @@
 #define CPUINFER_TASKQUEUE_H
 
 #include <atomic>
+#include <cstdint>
 #include <condition_variable>
 #include <functional>
 #include <mutex>
@@ -30,6 +31,7 @@ class TaskQueue {
  private:
   struct Node {
     std::function<void()> task;
+    uint64_t trace_id=0; int trace_layer=-1;
     std::atomic<Node*> next;
     Node() : task(nullptr), next(nullptr) {}
     Node(const std::function<void()>& t) : task(t), next(nullptr) {}

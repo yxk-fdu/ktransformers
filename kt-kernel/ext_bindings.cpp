@@ -20,7 +20,11 @@
 #include <cstring>
 
 #include "cpu_backend/cpuinfer.h"
+#include "cpu_backend/cpu_compute_trace.h"
 #include "cpu_backend/worker_pool.h"
+#if defined(KTRANSFORMERS_USE_ASCEND_NPU)
+#include "cpu_backend/ascend_callback_worker.h"
+#endif
 #include "operators/common.hpp"
 
 #if defined(USE_MOE_KERNEL)
@@ -430,6 +434,13 @@ void bind_moe_module(py::module_& moe_module, const char* name) {
       .def("load_weights", &MoeClass::load_weights)
       .def("forward", &MoeClass::forward_binding);
 
+  if constexpr (requires { &MoeClass::native_weight_pointers; }) {
+    moe_cls.def("native_weight_pointers", &MoeClass::native_weight_pointers);
+  }
+  if constexpr (requires { &MoeClass::pin_weights; }) {
+    moe_cls.def("pin_weights", &MoeClass::pin_weights, py::call_guard<py::gil_scoped_release>());
+  }
+
   // Bind write_weight_scale_to_buffer_task for MoE types that support it
   // Uses SFINAE to detect if MoeClass has write_weight_scale_to_buffer method
   if constexpr (requires { &MoeClass::write_weight_scale_to_buffer; }) {
@@ -476,7 +487,40 @@ void bind_moe_module(py::module_& moe_module, const char* name) {
   }
 }
 
+extern "C" void launch_no_block_torch(uintptr_t,uintptr_t,uintptr_t);
 PYBIND11_MODULE(kt_kernel_ext, m) {
+  m.def("launch_no_block_callback", &launch_no_block_torch);
+  m.def("lifecycle_begin", &kt::cpu_trace::begin);
+  m.def("lifecycle_set_context", [](uint64_t id,int layer){kt::cpu_trace::context={id,layer};});
+  m.def("lifecycle_mark", [](const std::string& phase) {
+    // Only literal names are retained by the asynchronous writer.
+    if(phase=="completion_wait_enter") {kt::cpu_trace::mark("completion_wait_enter");return;}
+    if(phase=="completion_wait_end") {kt::cpu_trace::mark("completion_wait_end");return;}
+    if(phase=="h2d_submit_begin") {kt::cpu_trace::mark("h2d_submit_begin");return;}
+    if(phase=="h2d_submit_end") {kt::cpu_trace::mark("h2d_submit_end");return;}
+    if(phase=="output_ready_recorded") {kt::cpu_trace::mark("output_ready_recorded");return;}
+    if(phase=="submit_return")kt::cpu_trace::mark("submit_return");
+    else if(phase=="drain_enter")kt::cpu_trace::mark("drain_enter");
+    else if(phase=="drain_return")kt::cpu_trace::mark("drain_return");
+    else if(phase=="callback_exit")kt::cpu_trace::mark("callback_exit");
+  });
+#if defined(KTRANSFORMERS_USE_ASCEND_NPU)
+  m.def(
+      "init_ascend_callback_worker",
+      []() { kt::ascend::ensure_callback_worker(nullptr); },
+      "Start ACL aclrtProcessReport worker for stream callbacks (Ascend NPU).");
+  m.def(
+      "subscribe_ascend_stream",
+      [](intptr_t stream_handle) {
+        kt::ascend::ensure_stream_subscribed(reinterpret_cast<aclrtStream>(stream_handle));
+      },
+      py::arg("stream_handle"),
+      "Subscribe an aclrtStream with the global callback worker.");
+  m.def("shutdown_ascend_callback_worker", &kt::ascend::shutdown_callback_worker,
+        "Stop the ACL callback worker thread.");
+  m.def("is_ascend_callback_worker_running", &kt::ascend::callback_worker_running,
+        "True iff the ACL callback worker is started and ready to process reports.");
+#endif
   py::class_<WorkerPool>(m, "WorkerPool").def(py::init<int>());
   py::class_<WorkerPoolConfig>(m, "WorkerPoolConfig")
       .def(py::init<>())
@@ -752,6 +796,7 @@ PYBIND11_MODULE(kt_kernel_ext, m) {
       .def_readwrite("group_min_len", &GeneralMOEConfig::group_min_len)
       .def_readwrite("group_max_len", &GeneralMOEConfig::group_max_len)
 
+      .def_readwrite("native_mxfp4", &GeneralMOEConfig::native_mxfp4)
       .def_readwrite("gate_type", &GeneralMOEConfig::gate_type)
       .def_readwrite("up_type", &GeneralMOEConfig::up_type)
       .def_readwrite("down_type", &GeneralMOEConfig::down_type)

@@ -792,3 +792,7 @@ It's also recommended to install black for Python code formatting:
 ```shell
 conda install black
 ```
+
+## Ascend CPU MoE
+
+See [Ascend CPU MoE build and integration](README.ascend.zh.md).

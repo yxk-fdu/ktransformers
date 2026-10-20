@@ -186,6 +186,8 @@ def load_extension(variant):
     """
     import importlib.util
     import glob
+    import sysconfig
+    extension_suffix = sysconfig.get_config_var("EXT_SUFFIX")
 
     # The .so files can be named in two ways:
     # Multi-variant: _kt_kernel_ext_amx.cpython-311-x86_64-linux-gnu.so
@@ -198,12 +200,12 @@ def load_extension(variant):
         kt_kernel_dir = os.path.dirname(os.path.abspath(__file__))
 
         # Try multi-variant naming first
-        pattern = os.path.join(kt_kernel_dir, f"_kt_kernel_ext_{variant}.*.so")
+        pattern = os.path.join(kt_kernel_dir, f"_kt_kernel_ext_{variant}{extension_suffix}")
         so_files = glob.glob(pattern)
 
         if not so_files:
             # Try single-variant naming (fallback for builds without CPUINFER_BUILD_ALL_VARIANTS)
-            pattern = os.path.join(kt_kernel_dir, "kt_kernel_ext.*.so")
+            pattern = os.path.join(kt_kernel_dir, f"kt_kernel_ext{extension_suffix}")
             so_files = glob.glob(pattern)
 
             if so_files:
